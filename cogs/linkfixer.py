@@ -35,7 +35,7 @@ class LinkFixerView(discord.ui.View):
         cog,
         original_message: discord.Message,
         fixed_links: list[str],
-        delay: int = 5,
+        delay: int = 20,
         fallback_timeout: int = 20,
     ):
         super().__init__(timeout=60)
@@ -57,11 +57,12 @@ class LinkFixerView(discord.ui.View):
         self._fallback_task: asyncio.Task | None = None
         if any(self.is_supported_embed_link(link) for link in self.fixed_links):
             self.restart_fallback_timeout()
-            if not any(self.is_x_link(link) for link in self.fixed_links):
-                for lang_id in ("lang_hu", "lang_en", "lang_random"):
-                    self.remove_button(lang_id)
         else:
             self.remove_button("try_another_embedder")
+        # Translation suffixes only work on X embeds; hide the lang buttons otherwise.
+        if not any(self.is_x_link(link) for link in self.fixed_links):
+            for lang_id in ("lang_hu", "lang_en", "lang_random"):
+                self.remove_button(lang_id)
 
     def restart_fallback_timeout(self):
         if self._fallback_task and not self._fallback_task.done():
@@ -325,6 +326,7 @@ class LinkFixer(commands.Cog):
         self.x_pattern = re.compile(r'https?://(?:www\.)?(?:x|twitter)\.com/([^\s]+)')
         self.ig_pattern = re.compile(r'https?://(?:www\.)?instagram\.com/([^\s]+)')
         self.reddit_pattern = re.compile(r'https?://(?:www\.)?reddit\.com/([^\s]+)')
+        self.tiktok_pattern = re.compile(r'https?://(?:www\.)?tiktok\.com/([^\s]+)')
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -347,9 +349,13 @@ class LinkFixer(commands.Cog):
         for match in self.reddit_pattern.finditer(message.content):
             fixed_links.append(f"https://vxreddit.com/{match.group(1)}")
 
+        # --- TIKTOK FIX --- (single embedder, so no embedder-switching for it)
+        for match in self.tiktok_pattern.finditer(message.content):
+            fixed_links.append(f"https://tnktok.com/{match.group(1)}")
+
         if fixed_links:
             try:
-                view = LinkFixerView(self, message, fixed_links, delay=5)
+                view = LinkFixerView(self, message, fixed_links)
 
                 final_message = view.build_message_content()
                 bot_message = await message.channel.send(final_message, view=view)
