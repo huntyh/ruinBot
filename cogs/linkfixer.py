@@ -98,25 +98,14 @@ class LinkFixerView(discord.ui.View):
 
     @staticmethod
     def apply_lang_suffix(link: str, lang: str | None) -> str:
-        """lang=None removes an existing suffix, otherwise sets /lang at the end.
-
-        Suffixes only ever live directly after the status id, so instead of
-        guessing "looks like a language code" we keep everything up to
-        `/<user>/status/<id>` (that's how our links are built) and re-append the
-        language after it.
+        """lang=None keeps the link byte-identical (photo paths etc.);
+        otherwise appends /lang at the end. fixed_links never carry a
+        suffix (it's view state, applied at render time), so this can't stack.
         """
-        if not LinkFixerView.is_x_link(link):
-            return link
-        # No translation selected: keep the original URL exactly (photo paths etc.)
-        if not lang:
+        if not LinkFixerView.is_x_link(link) or not lang:
             return link
         parsed = urlparse(link)
-        path = parsed.path
-        m = re.match(r"/[^/]+/status/\d+", path)
-        if m:
-            path = path[: m.end()]
-        if lang:
-            path = f"{path}/{lang}"
+        path = f"{parsed.path.rstrip('/')}/{lang}"
         return urlunparse(parsed._replace(path=path))
 
     def refresh_lang_buttons(self):
