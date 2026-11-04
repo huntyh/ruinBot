@@ -107,6 +107,9 @@ class LinkFixerView(discord.ui.View):
         """
         if not LinkFixerView.is_x_link(link):
             return link
+        # No translation selected: keep the original URL exactly (photo paths etc.)
+        if not lang:
+            return link
         parsed = urlparse(link)
         path = parsed.path
         m = re.match(r"/[^/]+/status/\d+", path)
