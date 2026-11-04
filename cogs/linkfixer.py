@@ -43,7 +43,7 @@ class LinkFixerView(discord.ui.View):
         cog,
         original_message: discord.Message,
         fixed_links: list[str],
-        delay: int = 20,
+        delay: int = 5,
         fallback_timeout: int = 20,
     ):
         super().__init__(timeout=60)
@@ -464,7 +464,7 @@ class LinkFixer(commands.Cog):
 
         if fixed_links:
             try:
-                view = LinkFixerView(self, message, fixed_links)
+                view = LinkFixerView(self, message, fixed_links, delay=5)
 
                 final_message = view.build_message_content()
                 bot_message = await message.channel.send(final_message, view=view)
