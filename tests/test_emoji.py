@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import discord
 from discord.ext import commands
@@ -23,6 +23,8 @@ class EmojiTests(unittest.IsolatedAsyncioTestCase):
         self.source = discord.PartialEmoji(name="party", id=111111111111111111, animated=True)
         self.ctx = SimpleNamespace(
             guild=self.guild, author=self.user, defer=AsyncMock(), reply=AsyncMock(),
+            interaction=None, message=SimpleNamespace(reference=None),
+            bot=SimpleNamespace(get_partial_messageable=Mock()),
         )
 
     def interaction(self, user=None):
@@ -41,6 +43,63 @@ class EmojiTests(unittest.IsolatedAsyncioTestCase):
             await bot.add_cog(EmojiImporter(bot))
             self.assertIsNotNone(bot.get_command("yoink"))
             self.assertIsNotNone(bot.tree.get_command("yoink"))
+            self.assertIsNotNone(bot.tree.get_command("Yoink emoji", type=discord.AppCommandType.message))
+            self.assertFalse(bot.tree.get_command("yoink").parameters[0].required)
+            await bot.remove_cog("EmojiImporter")
+            self.assertIsNone(bot.tree.get_command("Yoink emoji", type=discord.AppCommandType.message))
+
+    async def test_reply_fetches_target_and_imports_to_current_guild(self):
+        self.ctx.message.reference = SimpleNamespace(channel_id=12, message_id=34)
+        channel = SimpleNamespace(fetch_message=AsyncMock(return_value=SimpleNamespace(content=f"  {self.source}\n")))
+        self.ctx.bot.get_partial_messageable.return_value = channel
+        await EmojiImporter.yoink.callback(self.cog, self.ctx)
+        self.ctx.bot.get_partial_messageable.assert_called_once_with(12)
+        channel.fetch_message.assert_awaited_once_with(34)
+        self.guild.create_custom_emoji.assert_awaited_once()
+
+    async def test_missing_reply_and_inaccessible_message_are_reported(self):
+        await EmojiImporter.yoink.callback(self.cog, self.ctx)
+        self.assertIn("Apps", self.ctx.reply.call_args.args[0])
+        self.ctx.message.reference = SimpleNamespace(channel_id=12, message_id=34)
+        self.ctx.bot.get_partial_messageable.return_value = SimpleNamespace(fetch_message=AsyncMock(
+            side_effect=discord.NotFound(SimpleNamespace(status=404, reason="Not found"), "gone"),
+        ))
+        await EmojiImporter.yoink.callback(self.cog, self.ctx)
+        self.assertIn("elolvasni", self.ctx.reply.call_args.args[0])
+        self.guild.create_custom_emoji.assert_not_awaited()
+
+    async def test_context_menu_uses_requester_not_message_author(self):
+        interaction = self.interaction()
+        message = SimpleNamespace(content=str(self.source), author=SimpleNamespace(id=99))
+        await self.cog.yoink_message(interaction, message)
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        self.guild.create_custom_emoji.assert_awaited_once()
+        self.assertIn("42", self.guild.create_custom_emoji.call_args.kwargs["reason"])
+        self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
+
+    async def test_context_menu_rejects_multiple_emojis_and_text(self):
+        for value in (str(self.source) * 2, "hello " + str(self.source), "😀", ""):
+            await self.cog.yoink_message(self.interaction(), SimpleNamespace(content=value))
+        self.guild.create_custom_emoji.assert_not_awaited()
+
+    async def test_context_menu_conflict_belongs_to_requester(self):
+        self.guild.fetch_emojis.return_value = [discord.PartialEmoji(name="party", id=333333333333333333)]
+        interaction = self.interaction()
+        await self.cog.yoink_message(interaction, SimpleNamespace(content=str(self.source)))
+        view = interaction.followup.send.call_args.kwargs["view"]
+        self.addCleanup(view.stop)
+        self.assertEqual(view.user_id, self.user.id)
+        self.assertEqual(len(interaction.followup.send.call_args.kwargs["embeds"]), 2)
+        self.guild.create_custom_emoji.assert_not_awaited()
+
+    async def test_context_menu_checks_permissions_and_rejects_dms(self):
+        interaction = self.interaction(SimpleNamespace(id=99, guild_permissions=discord.Permissions.none()))
+        await self.cog.yoink_message(interaction, SimpleNamespace(content=str(self.source)))
+        self.assertIn("Neked", interaction.followup.send.call_args.args[0])
+        interaction.guild = None
+        await self.cog.yoink_message(interaction, SimpleNamespace(content=str(self.source)))
+        self.assertIn("szerveren", interaction.followup.send.call_args.args[0])
+        self.guild.create_custom_emoji.assert_not_awaited()
 
     async def test_adds_original_name_and_preserves_animated_source(self):
         await self.command()

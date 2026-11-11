@@ -109,6 +109,24 @@ class EmojiImporter(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.guild_locks = {}
+        self.message_command = discord.app_commands.ContextMenu(
+            name="Yoink emoji", callback=self.yoink_message,
+        )
+
+    async def cog_load(self):
+        self.bot.tree.add_command(self.message_command)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.message_command.name, type=self.message_command.type)
+
+    async def yoink_message(self, interaction: discord.Interaction, message: discord.Message):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        async def reply(content, **kwargs):
+            return await interaction.followup.send(content, ephemeral=True, wait=True, **kwargs)
+
+        # A kérő jogait nézzük, nem az eredeti üzenet szerzőjéét.
+        await self.start_import(interaction.guild, interaction.user, message.content, reply)
 
     async def download_emoji(self, emoji):
         # A GIF-et külön kérjük, hogy az animáció biztosan megmaradjon.
@@ -157,23 +175,44 @@ class EmojiImporter(commands.Cog):
         return f"Hozzáadtam: {created} (`:{created.name}:`)", True
 
     @commands.hybrid_command(name="yoink", description="Másik szerver emojijának hozzáadása")
-    async def yoink(self, ctx: commands.Context, *, emoji: str):
+    async def yoink(self, ctx: commands.Context, *, emoji: str = None):
         error = permission_error(ctx.guild, ctx.author)
         if error:
             await ctx.reply(error, ephemeral=True)
             return
+        if emoji is None:
+            reference = ctx.message.reference if ctx.interaction is None else None
+            if reference is None or reference.message_id is None:
+                await ctx.reply("Küldj egy emojit: `r!yoink <emoji>`, vagy válaszolj egy csak egy emojit tartalmazó üzenetre `r!yoink`-kal. Az üzenet Apps → Yoink emoji menüje is működik.", ephemeral=True)
+                return
+            try:
+                # A hivatkozás csatornáját használjuk; a cél mindig a jelenlegi szerver.
+                channel = ctx.bot.get_partial_messageable(reference.channel_id)
+                message = await channel.fetch_message(reference.message_id)
+            except discord.HTTPException:
+                await ctx.reply("Nem tudom elolvasni az eredeti üzenetet. Lehet, hogy törölték, vagy nincs jogom az előzményekhez.")
+                return
+            emoji = message.content
+        await self.start_import(ctx.guild, ctx.author, emoji, ctx.reply, ctx.defer)
+
+    async def start_import(self, guild, user, emoji, reply, defer=None):
+        error = permission_error(guild, user)
+        if error:
+            await reply(error)
+            return
         if not EMOJI_PATTERN.fullmatch(emoji.strip()):
-            await ctx.reply("Egy másik szerver egyéni emojiját küldd, pl. `r!yoink <:nev:123456789012345678>`.", ephemeral=True)
+            await reply("Pontosan egy egyéni emoji kell, más szöveg nélkül. Pl. `r!yoink <:nev:123456789012345678>`.")
             return
         source = discord.PartialEmoji.from_str(emoji.strip())
-        await ctx.defer()
+        if defer:
+            await defer()
         try:
-            existing = await ctx.guild.fetch_emojis()
+            existing = await guild.fetch_emojis()
         except discord.HTTPException:
-            await ctx.reply("Nem sikerült lekérni a szerver emojijait, próbáld újra.")
+            await reply("Nem sikerült lekérni a szerver emojijait, próbáld újra.")
             return
         if any(item.id == source.id for item in existing):
-            await ctx.reply("Ez az emoji már itt van a szerveren.")
+            await reply("Ez az emoji már itt van a szerveren.")
             return
         conflicts = [item for item in existing if item.name.casefold() == source.name.casefold()]
         if conflicts:
@@ -181,21 +220,14 @@ class EmojiImporter(commands.Cog):
             incoming.set_image(url=source.url)
             current = discord.Embed(title=f"Már itt van: :{conflicts[0].name}:")
             current.set_image(url=conflicts[0].url)
-            view = EmojiImportView(self, ctx.author.id, source)
-            view.message = await ctx.reply(
+            view = EmojiImportView(self, user.id, source)
+            view.message = await reply(
                 "Ilyen nevű emoji már van, lehet, hogy ugyanaz. Biztos hozzáadod? Ha igen, adj neki másik nevet.",
                 embeds=[incoming, current], view=view,
             )
             return
-        result, _ = await self.import_emoji(ctx.guild, ctx.author, source, source.name)
-        await ctx.reply(result)
-
-    @yoink.error
-    async def yoink_error(self, ctx, error):
-        if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.reply("Küldj egy emojit is: `r!yoink <emoji>`.")
-        else:
-            raise error
+        result, _ = await self.import_emoji(guild, user, source, source.name)
+        await reply(result)
 
 
 async def setup(bot):
