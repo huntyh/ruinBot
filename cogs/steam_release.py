@@ -379,7 +379,3 @@ class SteamRelease(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SteamRelease(bot))
-    # main.py performs a guild sync at startup; mirror global hybrid commands
-    # into that guild before the sync so /release appears immediately.
-    development_guild = discord.Object(id=232227916036046849)
-    bot.tree.copy_global_to(guild=development_guild)

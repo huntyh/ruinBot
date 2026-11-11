@@ -63,7 +63,10 @@ async def on_ready():
     bot.db.commit()
 
     await bot.change_presence(activity=discord.Game('anyáddal'))
-    await bot.tree.sync(guild=discord.Object(id=232227916036046849))
+    sync_guild = discord.Object(id=232227916036046849)
+    # A globális parancsok is jelenjenek meg rögtön ezen a szerveren.
+    bot.tree.copy_global_to(guild=sync_guild)
+    await bot.tree.sync(guild=sync_guild)
     print("na re")
     kodolo_chan = bot.get_channel(int(NARE))
     await kodolo_chan.send("na re")
