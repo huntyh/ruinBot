@@ -34,13 +34,13 @@ class EmojiTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def command(self, value=None):
-        await EmojiImporter.emoji.callback(self.cog, self.ctx, emoji=value or str(self.source))
+        await EmojiImporter.yoink.callback(self.cog, self.ctx, emoji=value or str(self.source))
 
     async def test_registers_prefix_and_slash_commands(self):
         async with commands.Bot(command_prefix="r!", intents=discord.Intents.none()) as bot:
             await bot.add_cog(EmojiImporter(bot))
-            self.assertIsNotNone(bot.get_command("emoji"))
-            self.assertIsNotNone(bot.tree.get_command("emoji"))
+            self.assertIsNotNone(bot.get_command("yoink"))
+            self.assertIsNotNone(bot.tree.get_command("yoink"))
 
     async def test_adds_original_name_and_preserves_animated_source(self):
         await self.command()

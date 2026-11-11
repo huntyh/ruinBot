@@ -23,5 +23,5 @@ A csatornaszintu allapot a szerver es thread eseten a szulocsatorna tiltasat is 
 A Facebook-linkeket (facebook.com, www/m/mbasic/web valtozatok) facebed.com linkekre javitja, az eredeti utvonallal es query parameterekkel.
 
 emoji import:
-`/emoji emoji:<emoji>` vagy `r!emoji <emoji>` — masik szerver egyeni emojijat hozzaadja az eredeti nevevel (az animaciot is megtartja). Neked es a botnak is Create Expressions vagy Manage Expressions jog kell.
+`/yoink emoji:<emoji>` vagy `r!yoink <emoji>` — masik szerver egyeni emojijat hozzaadja az eredeti nevevel (az animaciot is megtartja). Neked es a botnak is Create Expressions vagy Manage Expressions jog kell.
 Ha mar van ilyen nevu emoji, megmutatja a kettot, es csak az eredeti kero erositheti meg a hozzaadast az „Igen, masik nevvel” gombbal; ekkor egy uj, meg szabad nevet kell megadnia. A „Megse” gomb megszakitja, a kerdes 3 perc utan lejar.

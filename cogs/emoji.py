@@ -156,14 +156,14 @@ class EmojiImporter(commands.Cog):
                 return str(error), False
         return f"Hozzáadtam: {created} (`:{created.name}:`)", True
 
-    @commands.hybrid_command(name="emoji", description="Másik szerver emojijának hozzáadása")
-    async def emoji(self, ctx: commands.Context, *, emoji: str):
+    @commands.hybrid_command(name="yoink", description="Másik szerver emojijának hozzáadása")
+    async def yoink(self, ctx: commands.Context, *, emoji: str):
         error = permission_error(ctx.guild, ctx.author)
         if error:
             await ctx.reply(error, ephemeral=True)
             return
         if not EMOJI_PATTERN.fullmatch(emoji.strip()):
-            await ctx.reply("Egy másik szerver egyéni emojiját küldd, pl. `r!emoji <:nev:123456789012345678>`.", ephemeral=True)
+            await ctx.reply("Egy másik szerver egyéni emojiját küldd, pl. `r!yoink <:nev:123456789012345678>`.", ephemeral=True)
             return
         source = discord.PartialEmoji.from_str(emoji.strip())
         await ctx.defer()
@@ -190,10 +190,10 @@ class EmojiImporter(commands.Cog):
         result, _ = await self.import_emoji(ctx.guild, ctx.author, source, source.name)
         await ctx.reply(result)
 
-    @emoji.error
-    async def emoji_error(self, ctx, error):
+    @yoink.error
+    async def yoink_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.reply("Küldj egy emojit is: `r!emoji <emoji>`.")
+            await ctx.reply("Küldj egy emojit is: `r!yoink <emoji>`.")
         else:
             raise error
 
