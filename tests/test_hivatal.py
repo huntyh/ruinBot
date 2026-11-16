@@ -316,7 +316,7 @@ class OfficeDiscordTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(r"\*\*sör\*\*", kwargs["embed"].description)
         self.assertEqual(len(self.book.recent(1, 2)), 1)
 
-    async def test_reconstructed_button_appeals_and_updates_original(self):
+    async def test_reconstructed_button_posts_public_appeal_without_editing_original(self):
         case = self.book.create(1, 2, "sörengedély")
         original = AppealButton(case.id)
         match = AppealButton.__discord_ui_compiled_template__.fullmatch(original.custom_id)
@@ -324,9 +324,14 @@ class OfficeDiscordTests(unittest.IsolatedAsyncioTestCase):
         interaction = self.interaction()
         await button.callback(interaction)
         self.assertIsNotNone(self.book.get(1, case.id).appeal)
-        interaction.message.edit.assert_awaited_once()
-        self.assertIsNone(interaction.message.edit.call_args.kwargs["view"])
-        self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
+        interaction.message.edit.assert_not_awaited()
+        calls = interaction.followup.send.await_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(calls[0].kwargs["ephemeral"])
+        self.assertNotIn("embed", calls[0].kwargs)
+        self.assertFalse(calls[1].kwargs["ephemeral"])
+        self.assertIn("Jogerős", calls[1].kwargs["embed"].fields[1].name)
+        self.assertEqual(calls[1].kwargs["allowed_mentions"].to_dict()["parse"], [])
 
     async def test_tagged_recipient_can_use_reconstructed_button(self):
         interaction = self.interaction()
@@ -343,7 +348,8 @@ class OfficeDiscordTests(unittest.IsolatedAsyncioTestCase):
         await button.callback(recipient)
         self.assertEqual(self.book.get(1, case.id).appeal["appealed_by"], 3)
         self.assertIn("**Fellebbező:** <@3>", recipient.followup.send.call_args.kwargs["embed"].description)
-        recipient.message.edit.assert_awaited_once()
+        recipient.message.edit.assert_not_awaited()
+        self.assertFalse(recipient.followup.send.call_args.kwargs["ephemeral"])
 
     async def test_explicit_member_can_use_appeal_command(self):
         member = MagicMock(spec=discord.Member)
@@ -356,6 +362,8 @@ class OfficeDiscordTests(unittest.IsolatedAsyncioTestCase):
         await self.cog.fellebbezes.callback(self.cog, recipient, case.id)
         self.assertEqual(self.book.get(1, case.id).appeal["appealed_by"], 3)
         recipient.message.edit.assert_not_awaited()
+        self.assertFalse(recipient.followup.send.call_args.kwargs["ephemeral"])
+        self.assertIn("embed", recipient.followup.send.call_args.kwargs)
 
     async def test_participants_see_the_case_in_their_private_list(self):
         self.book.create(1, 2, "<@3>-nak egy ban")
@@ -372,22 +380,45 @@ class OfficeDiscordTests(unittest.IsolatedAsyncioTestCase):
         wrong = self.interaction(user_id=3)
         await AppealButton(case.id).callback(wrong)
         wrong.message.edit.assert_not_awaited()
+        self.assertTrue(wrong.followup.send.call_args.kwargs["ephemeral"])
+        self.assertEqual(wrong.followup.send.await_count, 1)
         self.assertIsNone(self.book.get(1, case.id).appeal)
         await self.cog.handle_appeal(self.interaction(), case.id)
         duplicate = self.interaction()
         await AppealButton(case.id).callback(duplicate)
         duplicate.message.edit.assert_not_awaited()
         self.assertIn("jogerős", duplicate.followup.send.call_args.args[0])
+        self.assertTrue(duplicate.followup.send.call_args.kwargs["ephemeral"])
+        self.assertEqual(duplicate.followup.send.await_count, 1)
 
-    async def test_deleted_message_does_not_lose_final_ruling(self):
+    async def test_appeal_does_not_require_source_message(self):
+        case = self.book.create(1, 2, "sörengedély")
+        interaction = self.interaction()
+        interaction.message = None
+        await self.cog.handle_appeal(interaction, case.id)
+        self.assertIsNotNone(self.book.get(1, case.id).appeal)
+        self.assertFalse(interaction.followup.send.call_args.kwargs["ephemeral"])
+        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+
+    async def test_private_case_copy_button_also_posts_public_appeal(self):
+        case = self.book.create(1, 2, "sörengedély")
+        interaction = self.interaction()
+        interaction.message.flags = discord.MessageFlags(ephemeral=True)
+        await AppealButton(case.id).callback(interaction)
+        interaction.message.edit.assert_not_awaited()
+        self.assertFalse(interaction.followup.send.call_args.kwargs["ephemeral"])
+
+    async def test_public_send_failure_preserves_final_ruling_and_reports_privately(self):
         case = self.book.create(1, 2, "sörengedély")
         interaction = self.interaction()
         response = MagicMock(status=404, reason="Not Found")
-        interaction.message.edit.side_effect = discord.NotFound(response, "deleted")
+        interaction.followup.send.side_effect = [None, discord.NotFound(response, "deleted"), None]
         with self.assertLogs("cogs.hivatal", level="WARNING"):
-            await self.cog.handle_appeal(interaction, case.id, from_button=True)
+            await self.cog.handle_appeal(interaction, case.id)
         self.assertIsNotNone(self.book.get(1, case.id).appeal)
-        self.assertIn("embed", interaction.followup.send.call_args.kwargs)
+        interaction.message.edit.assert_not_awaited()
+        self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
+        self.assertIn(f"iktatoszam:{case.id}", interaction.followup.send.call_args.args[0])
 
     async def test_missing_cog_and_dm_button_have_friendly_responses(self):
         interaction = self.interaction()

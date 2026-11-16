@@ -85,7 +85,7 @@ class AppealButton(discord.ui.DynamicItem[discord.ui.Button],
         if cog is None:
             await interaction.response.send_message("A hivatal épp költözik. Próbáld újra később.", ephemeral=True)
             return
-        await cog.handle_appeal(interaction, self.case_id, from_button=True)
+        await cog.handle_appeal(interaction, self.case_id)
 
 
 def case_view(case: Case):
@@ -165,8 +165,8 @@ class Hivatal(commands.GroupCog, group_name="hivatal", group_description="Ruin �
     async def fellebbezes(self, interaction: discord.Interaction, iktatoszam: app_commands.Range[int, 1, 9_007_199_254_740_991]):
         await self.handle_appeal(interaction, iktatoszam)
 
-    async def handle_appeal(self, interaction, case_id, *, from_button=False):
-        # A felülvizsgálat privát. Gombnál az eredeti nyilvános iratot is frissítjük.
+    async def handle_appeal(self, interaction, case_id):
+        # A hibákat csak az ügyfél látja, a jogerős határozat külön közhírré tétetik.
         await interaction.response.defer(thinking=True, ephemeral=True)
         if interaction.guild_id is None:
             await interaction.followup.send("A hivatal csak szerveren tart ügyfélfogadást.", ephemeral=True)
@@ -175,16 +175,19 @@ class Hivatal(commands.GroupCog, group_name="hivatal", group_description="Ruin �
                                      interaction.guild_id, interaction.user.id, case_id)
         if case is None:
             return
-        embed = case_embed(case)
-        if from_button and interaction.message is not None:
-            try:
-                await interaction.message.edit(embed=embed, view=None,
-                                               allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException:
-                # A jogerős irat akkor is megmarad, ha az eredeti üzenetet törölték.
-                log.warning("Nem frissíthető a hivatal #%s üzenete", case.id, exc_info=True)
-        await interaction.followup.send(embed=embed, ephemeral=True,
-                                        allowed_mentions=discord.AllowedMentions.none())
+        # A privát defer első followupja örökli a privát láthatóságot.
+        # Előbb lezárjuk azt, hogy a következő üzenet biztosan nyilvános legyen.
+        await interaction.followup.send("A másodfok határozott. A döntést külön üzenetben hirdetjük ki.",
+                                        ephemeral=True)
+        try:
+            await interaction.followup.send(embed=case_embed(case), ephemeral=False,
+                                            allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            log.warning("Nem hirdethető ki a hivatal #%s határozata", case.id, exc_info=True)
+            await interaction.followup.send(
+                f"A kihirdetés elakadt, de a döntés megmaradt. Másolat: `/hivatal ugy iktatoszam:{case.id}`.",
+                ephemeral=True,
+            )
 
 
 async def setup(bot: commands.Bot):
