@@ -26,3 +26,10 @@ emoji import:
 `/yoink emoji:<emoji>` vagy `r!yoink <emoji>` — masik szerver egyeni emojijat hozzaadja az eredeti nevevel (az animaciot is megtartja). Neked es a botnak is Create Expressions vagy Manage Expressions jog kell.
 Mas uzenetebol is megy: valaszolj ra `r!yoink`-kal (a botnak Read Message History jog kell), vagy az uzenet menujeben Apps → Yoink emoji. Az uzenet pontosan egy egyeni emojit tartalmazzon, mas szoveg nelkul. Mindig annak a szervernek az emojijaihoz adja hozza, ahol hasznalod; az Apps valaszat csak te latod.
 Ha mar van ilyen nevu emoji, megmutatja a kettot, es csak az eredeti kero erositheti meg a hozzaadast az „Igen, masik nevvel” gombbal; ekkor egy uj, meg szabad nevet kell megadnia. A „Megse” gomb megszakitja, a kerdes 3 perc utan lejar.
+
+ruin ügyfélszolgálat:
+`/hivatal kerveny targy:engedélyt kérek még egy sörre` — a hivatal iktatja a kérelmet, és nyilvános határozatot hoz: engedély, elutasítás vagy teljesen értelmetlen hiánypótlás. Saját ügyintéző, indoklás, bizonyítékok, krumplis pecsét. A kérelem 3–300 karakter lehet.
+Az „Ezt megfellebbezem” gombbal vagy `/hivatal fellebbezes iktatoszam:42` paranccsal a kérelmező egyszer kérhet másodfokot. A másodfok garantáltan más döntést hoz, de nem feltétlenül jobbat, és végleges. A felülvizsgálati másolatot csak te látod; a gomb az éppen megnyomott iratot is frissíti.
+`/hivatal ugy iktatoszam:42` — az adott szerver ügyiratának aktuális másolata, csak neked. `/hivatal sajat` — az öt legutóbbi saját ügyed. Régebbi iratok számmal továbbra is lekérhetők.
+Fejenként és szerverenként napi 5 új ügy, a limit budapesti éjfélkor újraindul; a fellebbezés nem fogyaszt sorszámot. Az ügyek, limitek és fellebbezések a `usr/hivatal.sqlite3` fájlban maradnak meg. A gombok újraindítás után is működnek. Nincs új függőség vagy konfiguráció; a cog automatikusan betöltődik, a slash parancsok a szokásos induláskori sync után jelennek meg.
+Ez végig paródia: nincs valódi joghatás, díj, szerepkör- vagy jogosultságváltozás, és senkit nem pingel.
