@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.hivatal import Case, CaseBook, DECISIONS, OfficeError
+from utils.hivatal import Case, CaseBook, DECISIONS, MENTION, OfficeError
 
 
 log = logging.getLogger(__name__)
@@ -19,16 +19,33 @@ def safe_text(text):
     return discord.utils.escape_markdown(discord.utils.escape_mentions(text))
 
 
+def subject_text(case: Case):
+    # Csak az eltárolt felhasználói tageket hagyjuk meg; pinget a küldés tilt.
+    parts = []
+    start = 0
+    for match in MENTION.finditer(case.subject):
+        parts.append(safe_text(case.subject[start:match.start()]))
+        user_id = int(match[1])
+        parts.append(f"<@{user_id}>" if user_id in case.target_ids else safe_text(match[0]))
+        start = match.end()
+    parts.append(safe_text(case.subject[start:]))
+    return "".join(parts)
+
+
 def case_embed(case: Case):
     ruling = case.current
     colours = {"approved": 0x57A65A, "denied": 0xCD504D, "incomplete": 0xD4A23A}
     embed = discord.Embed(
         title=f"🏛️ RUIN ÜGYFÉLSZOLGÁLAT • #{case.id:06d}",
-        description=f"**Kérelmező:** <@{case.user_id}>\n**Tárgy:** {safe_text(case.subject)}",
+        description=f"**Kérelmező:** <@{case.user_id}>\n**Tárgy:** {subject_text(case)}",
         colour=colours[ruling["decision"]],
     )
+    if case.target_ids:
+        embed.description += "\n**Érintettek:** " + ", ".join(f"<@{user}>" for user in case.target_ids)
     if case.appeal:
         embed.add_field(name="Elsőfokú határozat", value=DECISIONS[case.ruling["decision"]][0])
+        if case.appeal.get("appealed_by"):
+            embed.description += f"\n**Fellebbező:** <@{case.appeal['appealed_by']}>"
     embed.add_field(
         name="⚖️ Jogerős határozat" if case.appeal else "⚖️ Határozat",
         value=f"**{DECISIONS[ruling['decision']][0]}**\n{ruling['instruction']}",
@@ -41,11 +58,12 @@ def case_embed(case: Case):
         name="Jogorvoslat",
         value=("Az ítélet jogerős. Az ügyiratot egy képzeletbeli galamb őrzi."
                if case.appeal else
-               "Nem tetszik? Egy fellebbezés jár, de a másodfok még rosszabb is lehet. "
+               "A kérelmező vagy bármelyik megjelölt érintett egyszer, közösen fellebbezhet. "
+               "A másodfok még rosszabb is lehet. "
                f"Gomb lent, vagy `/hivatal fellebbezes iktatoszam:{case.id}`."),
         inline=False,
     )
-    embed.set_footer(text="PARÓDIA • Nincs valódi joghatása vagy díja • A pecsét helye: 🥔")
+    embed.set_footer(text="A pecsét helye: 🥔")
     return embed
 
 
@@ -103,11 +121,14 @@ class Hivatal(commands.GroupCog, group_name="hivatal", group_description="Ruin �
         return None
 
     @app_commands.command(name="kerveny", description="Adj be bármit, a hivatal majd határoz róla. Napi 5 sorszám.")
-    @app_commands.describe(targy="Pl.: engedélyt kérek még egy sörre (3–300 karakter)")
-    async def kerveny(self, interaction: discord.Interaction, targy: app_commands.Range[str, 3, 300]):
+    @app_commands.describe(targy="Pl.: @Cserna-nak egy ban (3–300 karakter, a valódi tagek fellebbezhetnek)",
+                           erintett="Opcionális érintett: a tárgyban megjelölteken felül ő is fellebbezhet")
+    async def kerveny(self, interaction: discord.Interaction, targy: app_commands.Range[str, 3, 300],
+                     erintett: discord.Member | None = None):
         await interaction.response.defer(thinking=True)
         case = await self.run_office(interaction, self.book.create,
-                                     interaction.guild_id, interaction.user.id, targy)
+                                     interaction.guild_id, interaction.user.id, targy,
+                                     erintett.id if erintett is not None else None)
         if case is not None:
             await interaction.followup.send(embed=case_embed(case), view=case_view(case),
                                             allowed_mentions=discord.AllowedMentions.none())
@@ -121,7 +142,7 @@ class Hivatal(commands.GroupCog, group_name="hivatal", group_description="Ruin �
             await interaction.followup.send(embed=case_embed(case), view=case_view(case),
                                             ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
-    @app_commands.command(name="sajat", description="Az öt legutóbbi saját ügyed ezen a szerveren. Csak te látod.")
+    @app_commands.command(name="sajat", description="Az öt legutóbbi ügy, amit beadtál, vagy amiben érintett vagy. Csak te látod.")
     async def sajat(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
         cases = await self.run_office(interaction, self.book.recent, interaction.guild_id, interaction.user.id)
@@ -135,12 +156,12 @@ class Hivatal(commands.GroupCog, group_name="hivatal", group_description="Ruin �
             status = DECISIONS[case.current["decision"]][0]
             stage = "jogerős" if case.appeal else "fellebbezhető"
             embed.add_field(name=f"#{case.id:06d} • {status} • {stage}",
-                            value=safe_text(case.subject), inline=False)
+                            value=subject_text(case), inline=False)
         embed.set_footer(text="Másolat: /hivatal ugy iktatoszam:<szám>")
         await interaction.followup.send(embed=embed, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
-    @app_commands.command(name="fellebbezes", description="Egyszer megfellebbezheted a saját ügyedet. Lehet, hogy megbánod.")
-    @app_commands.describe(iktatoszam="A saját ügyed iktatószáma")
+    @app_commands.command(name="fellebbezes", description="Kérelmezőként vagy megjelölt érintettként egyszer fellebbezhetsz. Lehet, hogy megbánod.")
+    @app_commands.describe(iktatoszam="Az ügy iktatószáma, amelyet beadtál vagy amelyben megjelöltek")
     async def fellebbezes(self, interaction: discord.Interaction, iktatoszam: app_commands.Range[int, 1, 9_007_199_254_740_991]):
         await self.handle_appeal(interaction, iktatoszam)
 
