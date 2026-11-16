@@ -99,14 +99,14 @@ class LinkFixerView(discord.ui.View):
     @staticmethod
     def apply_lang_suffix(link: str, lang: str | None) -> str:
         """lang=None keeps the link byte-identical (photo paths etc.);
-        otherwise appends /lang at the end. fixed_links never carry a
+        otherwise uses fixvx.com and appends /lang at the end. fixed_links never carry a
         suffix (it's view state, applied at render time), so this can't stack.
         """
         if not LinkFixerView.is_x_link(link) or not lang:
             return link
         parsed = urlparse(link)
         path = f"{parsed.path.rstrip('/')}/{lang}"
-        return urlunparse(parsed._replace(path=path))
+        return urlunparse(parsed._replace(netloc="fixvx.com", path=path))
 
     def refresh_lang_buttons(self):
         for item in self.children:
@@ -329,7 +329,10 @@ class LinkFixer(commands.Cog):
         self.x_pattern = re.compile(r'https?://(?:www\.)?(?:x|twitter)\.com/([^\s]+)')
         self.ig_pattern = re.compile(r'https?://(?:www\.)?instagram\.com/([^\s]+)')
         self.reddit_pattern = re.compile(r'https?://(?:www\.)?reddit\.com/([^\s]+)')
-        self.tiktok_pattern = re.compile(r'https?://(?:www\.)?tiktok\.com/([^\s]+)')
+        self.tiktok_pattern = re.compile(
+            r'https?://(?:(?:www|vm|vt)\.)?tiktok\.com/([^\s<>]+)',
+            re.IGNORECASE,
+        )
         self.facebook_pattern = re.compile(
             r'https?://(?:(?:www|m|mbasic|web)\.)?facebook\.com/([^\s<>]+)',
             re.IGNORECASE,

@@ -231,5 +231,54 @@ class FacebookTest(SettingsFixture, unittest.IsolatedAsyncioTestCase):
             view.stop()
 
 
+class LinkRoutingTest(SettingsFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_tiktok_short_and_full_links(self):
+        for host, path in (
+            ("vm.tiktok.com", "ZMabc123/?share=1#video"),
+            ("vt.tiktok.com", "ZMabc123/"),
+            ("www.tiktok.com", "@user/video/123"),
+            ("tiktok.com", "t/ZMabc123/"),
+            ("VM.TIKTOK.COM", "ZMabc123/"),
+        ):
+            with self.subTest(host=host):
+                message = SimpleNamespace(
+                    guild=SimpleNamespace(id=10),
+                    channel=SimpleNamespace(id=20, send=AsyncMock()),
+                    author=SimpleNamespace(bot=False),
+                    content=f"look <https://{host}/{path}>",
+                )
+                with patch("cogs.linkfixer.LinkFixerView") as view:
+                    await self.cog.on_message(message)
+                    self.assertEqual(view.call_args.args[2], [f"https://tnktok.com/{path}"])
+                message.channel.send.assert_awaited_once()
+
+    async def test_translation_uses_fixvx_and_toggle_restores_original(self):
+        links = [
+            "https://girlcockx.com/user/status/123/photo/1?foo=bar#media",
+            "https://tnktok.com/ZMabc123/",
+        ]
+        message = SimpleNamespace(author=SimpleNamespace(display_name="user"))
+        view = LinkFixerView(self.cog, message, links)
+        interaction = SimpleNamespace(response=SimpleNamespace(edit_message=AsyncMock()))
+        try:
+            await view._apply_lang("hu", interaction)
+            self.assertIn(
+                "https://fixvx.com/user/status/123/photo/1/hu?foo=bar#media",
+                interaction.response.edit_message.call_args.kwargs["content"],
+            )
+            self.assertIn(links[1], view.build_message_content())
+            view.fixed_links = [view.use_another_embedder(link) for link in links]
+            self.assertIn("https://fixvx.com/", view.build_message_content())
+            await view._apply_lang("hu", interaction)
+            self.assertIsNone(view.language)
+            self.assertTrue(view.build_message_content().endswith("\n".join(view.fixed_links)))
+            self.assertEqual(links[0], "https://girlcockx.com/user/status/123/photo/1?foo=bar#media")
+        finally:
+            view._suppress_task.cancel()
+            view._fallback_task.cancel()
+            await asyncio.gather(view._suppress_task, view._fallback_task, return_exceptions=True)
+            view.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
