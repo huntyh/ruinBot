@@ -337,6 +337,10 @@ class LinkFixer(commands.Cog):
             r'https?://(?:(?:www|m|mbasic|web)\.)?facebook\.com/([^\s<>]+)',
             re.IGNORECASE,
         )
+        self.kick_pattern = re.compile(
+            r'https?://(?:www\.)?kick\.com/([^\s<>]+)',
+            re.IGNORECASE,
+        )
 
     def load_disabled(self) -> dict[str, list[int]]:
         try:
@@ -456,6 +460,9 @@ class LinkFixer(commands.Cog):
         # Facebed has no alternate embedder, so it stays out of EMBED_DOMAIN_GROUPS.
         for match in self.facebook_pattern.finditer(message.content):
             fixed_links.append(f"https://facebed.com/{match.group(1)}")
+
+        for match in self.kick_pattern.finditer(message.content):
+            fixed_links.append(f"https://clkick.com/{match.group(1)}")
 
         if fixed_links:
             try:
